@@ -1,0 +1,16 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlutterAppSettings", "FlutterAppSettings.csproj", "{DDB6D169-5DC2-47D8-ADD5-8F745DA6C5B7}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DDB6D169-5DC2-47D8-ADD5-8F745DA6C5B7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DDB6D169-5DC2-47D8-ADD5-8F745DA6C5B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DDB6D169-5DC2-47D8-ADD5-8F745DA6C5B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DDB6D169-5DC2-47D8-ADD5-8F745DA6C5B7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
