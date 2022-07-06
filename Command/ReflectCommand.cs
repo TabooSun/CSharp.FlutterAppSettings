@@ -65,17 +65,17 @@ public class ReflectCommand : BaseCommand
         Console.WriteLine("Reflecting Native Android Project...");
         const string buildApkScriptFileName = "buildapk.sh";
         var buildApkShellScriptFilePath = Path.Combine(flutterProjectRoot, "android", buildApkScriptFileName);
-        await using var fileStream = File.Create(buildApkShellScriptFilePath);
+
         await using var manifestResourceStream = Assembly.GetExecutingAssembly()
             .GetManifestResourceStream($"{nameof(FlutterAppSettings)}.Assets.{buildApkScriptFileName}")!;
-        await manifestResourceStream.CopyToAsync(fileStream);
-
-        var bytes = Encoding.UTF8.GetBytes(GetFlutterBuildCommand());
-        await fileStream.WriteAsync(bytes);
+        using var fileStreamReader = new StreamReader(manifestResourceStream);
+        var buildApkShellScriptFileContent =
+            string.Format(await fileStreamReader.ReadToEndAsync(), GetFlutterBuildCommand());
+        await File.WriteAllTextAsync(buildApkShellScriptFilePath, buildApkShellScriptFileContent);
 
         string GetFlutterBuildCommand()
         {
-            return $"\nflutter build apk --debug {additionalArgs.TrimStart()}";
+            return $"flutter build apk --debug {additionalArgs.TrimStart()}";
         }
     }
 
