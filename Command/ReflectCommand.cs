@@ -28,12 +28,13 @@ public class ReflectCommand : BaseCommand
     private async Task ReflectNativeIosProjectAsync(string additionalArgs)
     {
         Console.WriteLine("Reflecting Native iOS Project...");
-        using var process = Process.Start(new ProcessStartInfo("flutter", $"build ios --config-only {additionalArgs.TrimStart()}")
-        {
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            RedirectStandardInput = true,
-        })!;
+        using var process = Process.Start(
+            new ProcessStartInfo("flutter", $"build ios --config-only {additionalArgs.TrimStart()}")
+            {
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                RedirectStandardInput = true,
+            })!;
         Console.WriteLine($"Running: {process.StartInfo.FileName} {process.StartInfo.Arguments}");
         process.OutputDataReceived += (_, e) =>
         {
@@ -41,6 +42,7 @@ public class ReflectCommand : BaseCommand
             {
                 return;
             }
+
             Console.WriteLine(e.Data);
         };
         process.ErrorDataReceived += (_, e) =>
@@ -49,6 +51,7 @@ public class ReflectCommand : BaseCommand
             {
                 return;
             }
+
             Console.Error.WriteLine(e.Data);
         };
         process.Start();
@@ -63,9 +66,10 @@ public class ReflectCommand : BaseCommand
         const string buildApkScriptFileName = "buildapk.sh";
         var buildApkShellScriptFilePath = Path.Combine(flutterProjectRoot, "android", buildApkScriptFileName);
         await using var fileStream = File.Create(buildApkShellScriptFilePath);
-        await using var manifestResourceStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{nameof(FlutterAppSettings)}.Assets.{buildApkScriptFileName}")!;
+        await using var manifestResourceStream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream($"{nameof(FlutterAppSettings)}.Assets.{buildApkScriptFileName}")!;
         await manifestResourceStream.CopyToAsync(fileStream);
-        
+
         var bytes = Encoding.UTF8.GetBytes(GetFlutterBuildCommand());
         await fileStream.WriteAsync(bytes);
 
@@ -82,7 +86,8 @@ public class ReflectCommand : BaseCommand
     {
         Console.WriteLine("Reflecting Flutter Run/Debug Configurations...");
         var configurationFilePath = Path.Combine(flutterProjectRoot, ".run", "main.dart.run.xml");
-        ReflectRunDebugConfigurations(configurationFilePath,  ComputeWebAdditionalArgs(flutterAppSettings) + additionalArgs);
+        ReflectRunDebugConfigurations(configurationFilePath,
+            ComputeWebAdditionalArgs(flutterAppSettings) + additionalArgs);
     }
 
     private void ReflectRunDebugConfigurations(string configurationFilePath, string additionalArgs)
@@ -108,7 +113,7 @@ public class ReflectCommand : BaseCommand
     private string ComputeDartDefinesAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
     {
         if (flutterAppSettings.DartDefines is null) return string.Empty;
-        
+
         var sb = new StringBuilder();
         foreach (var (key, jsonElement) in flutterAppSettings.DartDefines)
         {
@@ -141,7 +146,7 @@ public class ReflectCommand : BaseCommand
     private static string ComputeWebAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
     {
         if (flutterAppSettings.Web is null) return string.Empty;
-        
+
         var sb = new StringBuilder();
         sb.Append(
             $" --{nameof(flutterAppSettings.Web.WebRenderer).ToKebabCase()} {flutterAppSettings.Web.WebRenderer}");
@@ -155,8 +160,12 @@ public class ReflectCommand : BaseCommand
             .Where(x => x.EndsWith(".json"));
         var allAppSettingsFileMap =
             allAppSettingFiles.ToDictionary(x => x.GetEnvironmentConfig(), LoadFlutterAppSettingsFromFile);
-        var devAppSettings = allAppSettingsFileMap[EnvironmentConfig.Dev];
-        var localAppSettings = allAppSettingsFileMap[EnvironmentConfig.Local];
+        var devAppSettings = allAppSettingsFileMap.ContainsKey(EnvironmentConfig.Dev)
+            ? allAppSettingsFileMap[EnvironmentConfig.Dev]
+            : new Models.FlutterAppSettings();
+        var localAppSettings = allAppSettingsFileMap.ContainsKey(EnvironmentConfig.Local)
+            ? allAppSettingsFileMap[EnvironmentConfig.Local]
+            : new Models.FlutterAppSettings();
         var appSettings = new Models.FlutterAppSettings
         {
             Web = new Models.FlutterAppSettings.WebAppSettings
