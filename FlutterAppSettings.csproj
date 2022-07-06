@@ -9,6 +9,7 @@
         <PackAsTool>true</PackAsTool>
         <ToolCommandName>flappsettings</ToolCommandName>
         <PackageOutputPath>./nupkg</PackageOutputPath>
+        <PackageVersion>1.0.1</PackageVersion>
     </PropertyGroup>
 
     <ItemGroup>
