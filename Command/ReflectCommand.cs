@@ -1,4 +1,5 @@
-using System.Runtime.CompilerServices;
+using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
@@ -11,22 +12,83 @@ namespace FlutterAppSettings.Command;
 [Verb("reflect", HelpText = "Reflect the current settings to Run/Debug Configurations as well as Xcode Scheme.")]
 public class ReflectCommand : BaseCommand
 {
-    public override Task ExecuteAsync()
+    public override async Task ExecuteAsync()
     {
         var flutterProjectRoot = GetFlutterProjectPath();
         var flutterAppSettings = GetFlutterAppSettings(flutterProjectRoot);
-        var additionalArgs = ComputeAdditionalArgs(flutterAppSettings);
-        
-        ReflectFlutterRunDebugConfigurations(flutterProjectRoot, additionalArgs);
+        var additionalArgs = ComputeDartDefinesAdditionalArgs(flutterAppSettings);
 
-        return Task.CompletedTask;
+        ReflectFlutterRunDebugConfigurations(flutterProjectRoot, flutterAppSettings, additionalArgs);
+        await ReflectNativeAndroidProjectAsync(flutterProjectRoot, additionalArgs);
+        await ReflectNativeIosProjectAsync(additionalArgs);
+
+        Console.WriteLine("Done reflecting settings.");
     }
 
-    private void ReflectFlutterRunDebugConfigurations(string flutterProjectRoot, string additionalArgs)
+    private async Task ReflectNativeIosProjectAsync(string additionalArgs)
+    {
+        Console.WriteLine("Reflecting Native iOS Project...");
+        using var process = Process.Start(new ProcessStartInfo("flutter", $"build ios --config-only {additionalArgs.TrimStart()}")
+        {
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            RedirectStandardInput = true,
+        })!;
+        Console.WriteLine($"Running: {process.StartInfo.FileName} {process.StartInfo.Arguments}");
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data is null)
+            {
+                return;
+            }
+            Console.WriteLine(e.Data);
+        };
+        process.ErrorDataReceived += (_, e) =>
+        {
+            if (e.Data is null)
+            {
+                return;
+            }
+            Console.Error.WriteLine(e.Data);
+        };
+        process.Start();
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        await process.WaitForExitAsync();
+    }
+
+    private async Task ReflectNativeAndroidProjectAsync(string flutterProjectRoot, string additionalArgs)
+    {
+        Console.WriteLine("Reflecting Native Android Project...");
+        const string buildApkScriptFileName = "buildapk.sh";
+        var buildApkShellScriptFilePath = Path.Combine(flutterProjectRoot, "android", buildApkScriptFileName);
+        await using var fileStream = File.Create(buildApkShellScriptFilePath);
+        await using var manifestResourceStream = Assembly.GetExecutingAssembly().GetManifestResourceStream($"{nameof(FlutterAppSettings)}.Assets.{buildApkScriptFileName}")!;
+        await manifestResourceStream.CopyToAsync(fileStream);
+        
+        var bytes = Encoding.UTF8.GetBytes(GetFlutterBuildCommand());
+        await fileStream.WriteAsync(bytes);
+
+        string GetFlutterBuildCommand()
+        {
+            return $"\nflutter build apk --debug {additionalArgs.TrimStart()}";
+        }
+    }
+
+    private void ReflectFlutterRunDebugConfigurations(
+        string flutterProjectRoot,
+        Models.FlutterAppSettings flutterAppSettings,
+        string additionalArgs)
+    {
+        Console.WriteLine("Reflecting Flutter Run/Debug Configurations...");
+        var configurationFilePath = Path.Combine(flutterProjectRoot, ".run", "main.dart.run.xml");
+        ReflectRunDebugConfigurations(configurationFilePath,  ComputeWebAdditionalArgs(flutterAppSettings) + additionalArgs);
+    }
+
+    private void ReflectRunDebugConfigurations(string configurationFilePath, string additionalArgs)
     {
         XmlDocument doc = new XmlDocument();
-        var filename = Path.Combine(flutterProjectRoot, ".run", "main.dart.run.xml");
-        doc.Load(filename);
+        doc.Load(configurationFilePath);
 
         var componentNode = doc.FirstChild;
         var configurationNode = componentNode!.FirstChild;
@@ -37,49 +99,54 @@ public class ReflectCommand : BaseCommand
                 continue;
             }
 
-            childNode.Attributes!.GetNamedItem("value")!.Value = additionalArgs;
+            childNode.Attributes!.GetNamedItem("value")!.Value = additionalArgs.TrimStart();
         }
-        
-        doc.Save(filename);
+
+        doc.Save(configurationFilePath);
     }
 
-    private string ComputeAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
+    private string ComputeDartDefinesAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
     {
+        if (flutterAppSettings.DartDefines is null) return string.Empty;
+        
         var sb = new StringBuilder();
-        if (flutterAppSettings.Web != null)
+        foreach (var (key, jsonElement) in flutterAppSettings.DartDefines)
         {
-            sb.Append($" --{nameof(flutterAppSettings.Web.WebRenderer).ToKebabCase()} {flutterAppSettings.Web.WebRenderer}");
-            sb.Append($" --{nameof(flutterAppSettings.Web.WebPort).ToKebabCase()} {flutterAppSettings.Web.WebPort}");
-        }
-
-        if (flutterAppSettings.DartDefines != null)
-        {
-            foreach (var (key, jsonElement) in flutterAppSettings.DartDefines)
+            object? value;
+            switch (jsonElement.ValueKind)
             {
-                object? value;
-                switch (jsonElement.ValueKind)
-                {
-                    case JsonValueKind.String:
-                        value = jsonElement.GetString();
-                        break;
-                    case JsonValueKind.Number:
-                        value = jsonElement.GetInt64();
-                        break;
-                    case JsonValueKind.False:
-                    case JsonValueKind.True:
-                        value = jsonElement.GetBoolean().ToString().ToLower();
-                        break;
-                    case JsonValueKind.Null:
-                        value = null;
-                        break;
-                    default:
-                        throw new NotImplementedException($"Unsupported value kind: {jsonElement.ValueKind}");
-                }
-                sb.Append($" --dart-define={key}={value}");
+                case JsonValueKind.String:
+                    value = jsonElement.GetString();
+                    break;
+                case JsonValueKind.Number:
+                    value = jsonElement.GetInt64();
+                    break;
+                case JsonValueKind.False:
+                case JsonValueKind.True:
+                    value = jsonElement.GetBoolean().ToString().ToLower();
+                    break;
+                case JsonValueKind.Null:
+                    value = null;
+                    break;
+                default:
+                    throw new NotImplementedException($"Unsupported value kind: {jsonElement.ValueKind}");
             }
+
+            sb.Append($" --dart-define={key}={value}");
         }
 
-        return sb.ToString().TrimStart();
+        return sb.ToString();
+    }
+
+    private static string ComputeWebAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
+    {
+        if (flutterAppSettings.Web is null) return string.Empty;
+        
+        var sb = new StringBuilder();
+        sb.Append(
+            $" --{nameof(flutterAppSettings.Web.WebRenderer).ToKebabCase()} {flutterAppSettings.Web.WebRenderer}");
+        sb.Append($" --{nameof(flutterAppSettings.Web.WebPort).ToKebabCase()} {flutterAppSettings.Web.WebPort}");
+        return sb.ToString();
     }
 
     private Models.FlutterAppSettings GetFlutterAppSettings(string flutterProjectRoot)
@@ -103,7 +170,7 @@ public class ReflectCommand : BaseCommand
             DartDefines = new Dictionary<string, JsonElement>()
         };
 
-        if (devAppSettings.DartDefines != null)
+        if (devAppSettings.DartDefines is not null)
         {
             foreach (var (key, value) in devAppSettings.DartDefines)
             {
@@ -111,7 +178,7 @@ public class ReflectCommand : BaseCommand
             }
         }
 
-        if (localAppSettings.DartDefines != null)
+        if (localAppSettings.DartDefines is not null)
         {
             foreach (var (key, value) in localAppSettings.DartDefines)
             {
