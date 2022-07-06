@@ -6,6 +6,7 @@ var parser = new Parser(settings =>
 {
     settings.CaseInsensitiveEnumValues = true;
     settings.AutoHelp = true;
+    settings.HelpWriter = Console.Out;
 });
 
 var parserResult = parser.ParseArguments<BootstrapCommand, ReflectCommand>(args);

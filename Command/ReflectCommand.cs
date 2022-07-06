@@ -9,7 +9,7 @@ using FlutterAppSettings.Enums;
 
 namespace FlutterAppSettings.Command;
 
-[Verb("reflect", HelpText = "Reflect the current settings to Run/Debug Configurations as well as Xcode Scheme.")]
+[Verb("reflect", HelpText = "Reflect the current settings to Run/Debug Configurations.")]
 public class ReflectCommand : BaseCommand
 {
     public override async Task ExecuteAsync()
