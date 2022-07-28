@@ -29,7 +29,7 @@ public class ReflectCommand : BaseCommand
     {
         Console.WriteLine("Reflecting Native iOS Project...");
         using var process = Process.Start(
-            new ProcessStartInfo("flutter", $"build ios --config-only {additionalArgs.TrimStart()}")
+            new ProcessStartInfo("flutter", $"build ios --config-only --no-codesign {additionalArgs.TrimStart()}")
             {
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
