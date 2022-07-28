@@ -6,6 +6,7 @@ using System.Xml;
 using CaseExtensions;
 using CommandLine;
 using FlutterAppSettings.Enums;
+using FlutterAppSettings.Models;
 
 namespace FlutterAppSettings.Command;
 
@@ -16,20 +17,23 @@ public class ReflectCommand : BaseCommand
     {
         var flutterProjectRoot = GetFlutterProjectPath();
         var flutterAppSettings = GetFlutterAppSettings(flutterProjectRoot);
-        var additionalArgs = ComputeDartDefinesAdditionalArgs(flutterAppSettings);
+        var additionalArgs = ComputeAdditionalArgs(flutterAppSettings);
 
         ReflectFlutterRunDebugConfigurations(flutterProjectRoot, flutterAppSettings, additionalArgs);
-        await ReflectNativeAndroidProjectAsync(flutterProjectRoot, additionalArgs);
-        await ReflectNativeIosProjectAsync(additionalArgs);
+        await ReflectNativeAndroidProjectAsync(flutterProjectRoot, flutterAppSettings, additionalArgs);
+        await ReflectNativeIosProjectAsync(additionalArgs, flutterAppSettings);
 
         Console.WriteLine("Done reflecting settings.");
     }
 
-    private async Task ReflectNativeIosProjectAsync(string additionalArgs)
+    private async Task ReflectNativeIosProjectAsync(string additionalArgs, Models.FlutterAppSettings flutterAppSettings)
     {
         Console.WriteLine("Reflecting Native iOS Project...");
         using var process = Process.Start(
-            new ProcessStartInfo("flutter", $"build ios --config-only --no-codesign {additionalArgs.TrimStart()}")
+            new ProcessStartInfo(
+                "flutter",
+                $"build ios --config-only --no-codesign {additionalArgs.TrimStart()} {GetDeviceSpecificAdditionalArgs(flutterAppSettings.Ios!)}"
+            )
             {
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
@@ -60,7 +64,10 @@ public class ReflectCommand : BaseCommand
         await process.WaitForExitAsync();
     }
 
-    private async Task ReflectNativeAndroidProjectAsync(string flutterProjectRoot, string additionalArgs)
+    private async Task ReflectNativeAndroidProjectAsync(
+        string flutterProjectRoot,
+        Models.FlutterAppSettings flutterAppSettings,
+        string additionalArgs)
     {
         Console.WriteLine("Reflecting Native Android Project...");
         const string buildApkScriptFileName = "buildapk.sh";
@@ -75,8 +82,26 @@ public class ReflectCommand : BaseCommand
 
         string GetFlutterBuildCommand()
         {
-            return $"flutter build apk --debug {additionalArgs.TrimStart()}";
+            return
+                $"flutter build apk --debug {additionalArgs.TrimStart()} {GetDeviceSpecificAdditionalArgs(flutterAppSettings.Android!)}";
         }
+    }
+
+    string GetDeviceSpecificAdditionalArgs(Models.FlutterAppSettings.DeviceSpecificSettings deviceSpecificSettings)
+    {
+        var sb = new StringBuilder();
+        foreach (var (key, value) in deviceSpecificSettings.Options!)
+        {
+            sb.Append($"--{key.ToKebabCase()} {ConvertJsonElementToObject(value)} ");
+        }
+
+        foreach (var flag in deviceSpecificSettings.Flags!)
+        {
+            // DO NOT add '--' prefix here because we are unsure that it's a single character flag.
+            sb.Append($"{flag.ToKebabCase()} ");
+        }
+
+        return sb.ToString();
     }
 
     private void ReflectFlutterRunDebugConfigurations(
@@ -110,37 +135,48 @@ public class ReflectCommand : BaseCommand
         doc.Save(configurationFilePath);
     }
 
-    private string ComputeDartDefinesAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
+    private string ComputeAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
     {
         if (flutterAppSettings.DartDefines is null) return string.Empty;
 
         var sb = new StringBuilder();
         foreach (var (key, jsonElement) in flutterAppSettings.DartDefines)
         {
-            object? value;
-            switch (jsonElement.ValueKind)
-            {
-                case JsonValueKind.String:
-                    value = jsonElement.GetString();
-                    break;
-                case JsonValueKind.Number:
-                    value = jsonElement.GetInt64();
-                    break;
-                case JsonValueKind.False:
-                case JsonValueKind.True:
-                    value = jsonElement.GetBoolean().ToString().ToLower();
-                    break;
-                case JsonValueKind.Null:
-                    value = null;
-                    break;
-                default:
-                    throw new NotImplementedException($"Unsupported value kind: {jsonElement.ValueKind}");
-            }
+            var value = ConvertJsonElementToObject(jsonElement);
 
             sb.Append($" --dart-define={key}={value}");
         }
 
         return sb.ToString();
+    }
+
+    private static object? ConvertJsonElementToObject(JsonElement jsonElement)
+    {
+        object? value = null;
+        switch (jsonElement.ValueKind)
+        {
+            case JsonValueKind.String:
+                value = jsonElement.GetString();
+                break;
+            case JsonValueKind.Number:
+                value = jsonElement.GetInt64();
+                break;
+            case JsonValueKind.False:
+            case JsonValueKind.True:
+                value = jsonElement.GetBoolean().ToString().ToLower();
+                break;
+            case JsonValueKind.Null:
+            case JsonValueKind.Undefined:
+                value = null;
+                break;
+            case JsonValueKind.Array:
+                value = jsonElement.EnumerateArray().ToList();
+                break;
+            case JsonValueKind.Object:
+                throw new NotImplementedException("Figure out how to support this");
+        }
+
+        return value;
     }
 
     private static string ComputeWebAdditionalArgs(Models.FlutterAppSettings flutterAppSettings)
@@ -176,6 +212,21 @@ public class ReflectCommand : BaseCommand
                               localAppSettings.Web?.WebRenderer ??
                               Models.FlutterAppSettings.WebAppSettings.DefaultWebRenderer,
             },
+            Android = new Models.FlutterAppSettings.AndroidAppSettings
+            {
+                Options = new Dictionary<string, JsonElement>(),
+                Flags = new List<string>(),
+            },
+            Ios = new Models.FlutterAppSettings.IosAppSettings
+            {
+                Options = new Dictionary<string, JsonElement>(),
+                Flags = new List<string>(),
+            },
+            Run = new Models.FlutterAppSettings.RunAppSettings
+            {
+                Options = new Dictionary<string, JsonElement>(),
+                Flags = new List<string>(),
+            },
             DartDefines = new Dictionary<string, JsonElement>()
         };
 
@@ -187,12 +238,38 @@ public class ReflectCommand : BaseCommand
             }
         }
 
+        void ConfigureDevDeviceSpecificSettings(
+            Models.FlutterAppSettings.DeviceSpecificSettings appDeviceSpecificSettings,
+            Models.FlutterAppSettings.DeviceSpecificSettings? devDeviceSpecificSettings
+        )
+        {
+            if (devDeviceSpecificSettings?.Options is not null)
+            {
+                foreach (var (key, value) in devDeviceSpecificSettings.Options)
+                {
+                    appDeviceSpecificSettings.Options![key] = value;
+                }
+            }
+
+            if (devDeviceSpecificSettings?.Flags is not null)
+            {
+                foreach (var flag in devDeviceSpecificSettings.Flags)
+                {
+                    appDeviceSpecificSettings.Flags!.Add(flag);
+                }
+            }
+        }
+
+        ConfigureDevDeviceSpecificSettings(appSettings.Android, devAppSettings.Android);
+        ConfigureDevDeviceSpecificSettings(appSettings.Ios, devAppSettings.Ios);
+        ConfigureDevDeviceSpecificSettings(appSettings.Web, devAppSettings.Web);
+        ConfigureDevDeviceSpecificSettings(appSettings.Run, devAppSettings.Run);
+
         if (localAppSettings.DartDefines is not null)
         {
             foreach (var (key, value) in localAppSettings.DartDefines)
             {
                 // Ignore this key pair if it already exists.
-
                 if (appSettings.DartDefines.ContainsKey(key))
                 {
                     continue;
@@ -202,11 +279,54 @@ public class ReflectCommand : BaseCommand
             }
         }
 
+        void ConfigureLocalDeviceSpecificSettings(
+            Models.FlutterAppSettings.DeviceSpecificSettings appDeviceSpecificSettings,
+            Models.FlutterAppSettings.DeviceSpecificSettings? devDeviceSpecificSettings
+        )
+        {
+            if (devDeviceSpecificSettings?.Options is not null)
+            {
+                foreach (var (key, value) in devDeviceSpecificSettings.Options)
+                {
+                    // Ignore this key pair if it already exists.
+                    if (appDeviceSpecificSettings.Options!.ContainsKey(key))
+                    {
+                        continue;
+                    }
+
+                    appDeviceSpecificSettings.Options[key] = value;
+                }
+            }
+
+            if (devDeviceSpecificSettings?.Flags is not null)
+            {
+                foreach (var flag in devDeviceSpecificSettings.Flags)
+                {
+                    // Ignore this flag if it already exists.
+                    if (appDeviceSpecificSettings.Flags!.Contains(flag))
+                    {
+                        continue;
+                    }
+
+                    appDeviceSpecificSettings.Flags.Add(flag);
+                }
+            }
+        }
+
+        ConfigureLocalDeviceSpecificSettings(appSettings.Android, localAppSettings.Android);
+        ConfigureLocalDeviceSpecificSettings(appSettings.Ios, localAppSettings.Ios);
+        ConfigureLocalDeviceSpecificSettings(appSettings.Web, localAppSettings.Web);
+        ConfigureLocalDeviceSpecificSettings(appSettings.Run, localAppSettings.Run);
+
         return appSettings;
 
         Models.FlutterAppSettings LoadFlutterAppSettingsFromFile(string filePath)
         {
-            return JsonSerializer.Deserialize<Models.FlutterAppSettings>(File.ReadAllText(filePath))!;
+            return JsonSerializer.Deserialize<Models.FlutterAppSettings>(File.ReadAllText(filePath),
+                new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = ScreamingSnakeCaseNamingPolicy.ScreamingSnakeCase
+                })!;
         }
     }
 }

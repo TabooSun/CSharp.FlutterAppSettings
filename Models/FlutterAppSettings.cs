@@ -6,23 +6,46 @@ namespace FlutterAppSettings.Models;
 
 public class FlutterAppSettings
 {
-    [JsonPropertyName("WEB")]
     public WebAppSettings? Web { get; set; }
-    
-    [JsonPropertyName("DART_DEFINES")]
+
+    public AndroidAppSettings? Android { get; set; }
+
+    public IosAppSettings? Ios { get; set; }
+
+    public RunAppSettings? Run { get; set; }
+
     public Dictionary<string, JsonElement>? DartDefines { get; set; }
-    
-    public class WebAppSettings
+
+    public class WebAppSettings : DeviceSpecificSettings
     {
         public const int DefaultWebPort = 30001;
         public const string DefaultWebRenderer = "canvaskit";
-        
-        public int WebPort { get; set; } = DefaultWebPort;
 
-        public string WebRenderer { get; set; } = DefaultWebRenderer;
+        public int? WebPort { get; set; }
+
+        public string? WebRenderer { get; set; }
+    }
+
+    public class RunAppSettings : DeviceSpecificSettings
+    {
+    }
+
+    public class AndroidAppSettings : DeviceSpecificSettings
+    {
+    }
+
+    public class IosAppSettings : DeviceSpecificSettings
+    {
+    }
+
+    public class DeviceSpecificSettings
+    {
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? Options { get; set; }
+
+        public List<string>? Flags { get; set; }
     }
 }
-
 
 class ScreamingSnakeCaseNamingPolicy : JsonNamingPolicy
 {
