@@ -16,12 +16,4 @@
       <PackageReference Include="CaseExtensions" Version="1.1.0" />
       <PackageReference Include="CommandLineParser" Version="2.9.1" />
     </ItemGroup>
-
-    <ItemGroup>
-      <None Remove="Assets\buildapk.sh" />
-      <EmbeddedResource Include="Assets\buildapk.sh">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </EmbeddedResource>
-    </ItemGroup>
-
 </Project>

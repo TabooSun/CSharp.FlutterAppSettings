@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Xml;
@@ -20,7 +19,7 @@ public class ReflectCommand : BaseCommand
         var additionalArgs = ComputeAdditionalArgs(flutterAppSettings);
 
         ReflectFlutterRunDebugConfigurations(flutterProjectRoot, flutterAppSettings, additionalArgs);
-        await ReflectNativeAndroidProjectAsync(flutterProjectRoot, flutterAppSettings, additionalArgs);
+        await ReflectNativeAndroidProjectAsync(flutterProjectRoot, flutterAppSettings);
         await ReflectNativeIosProjectAsync(additionalArgs, flutterAppSettings);
 
         Console.WriteLine("Done reflecting settings.");
@@ -66,24 +65,81 @@ public class ReflectCommand : BaseCommand
 
     private async Task ReflectNativeAndroidProjectAsync(
         string flutterProjectRoot,
-        Models.FlutterAppSettings flutterAppSettings,
-        string additionalArgs)
+        Models.FlutterAppSettings flutterAppSettings)
     {
         Console.WriteLine("Reflecting Native Android Project...");
-        const string buildApkScriptFileName = "buildapk.sh";
-        var buildApkShellScriptFilePath = Path.Combine(flutterProjectRoot, "android", buildApkScriptFileName);
+        var jetBrainsWorkspaceFilePath = Path.Combine(flutterProjectRoot, "android", ".idea", "workspace.xml");
+        ReflectNativeAndroidWorkspaceConfiguration(jetBrainsWorkspaceFilePath, flutterAppSettings);
+    }
 
-        await using var manifestResourceStream = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream($"{nameof(FlutterAppSettings)}.Assets.{buildApkScriptFileName}")!;
-        using var fileStreamReader = new StreamReader(manifestResourceStream);
-        var buildApkShellScriptFileContent =
-            string.Format(await fileStreamReader.ReadToEndAsync(), GetFlutterBuildCommand());
-        await File.WriteAllTextAsync(buildApkShellScriptFilePath, buildApkShellScriptFileContent);
+    private void ReflectNativeAndroidWorkspaceConfiguration(
+        string jetBrainsWorkspaceFilePath,
+        Models.FlutterAppSettings flutterAppSettings)
+    {
+        XmlDocument doc = new XmlDocument();
+        doc.Load(jetBrainsWorkspaceFilePath);
 
-        string GetFlutterBuildCommand()
+        XmlElement? component = null;
+        var projectNode = doc["project"]!;
+        foreach (XmlElement c in projectNode.GetElementsByTagName("component"))
+        {
+            if (!c.HasAttributes
+                || !c.HasAttribute("name")
+                || c.GetAttribute("name") != "AndroidGradleBuildConfiguration")
+            {
+                continue;
+            }
+
+            component = c;
+        }
+
+        CreateOrUpdateDartDefinesConfiguration();
+
+        doc.Save(jetBrainsWorkspaceFilePath);
+
+        string ComputeCommandLineOptions()
         {
             return
-                $"flutter build apk --debug {additionalArgs.TrimStart()} {GetDeviceSpecificAdditionalArgs(flutterAppSettings.Android!)}";
+                $"-Pdart-defines={flutterAppSettings.DartDefines!.Select((x) => Convert.ToBase64String(Encoding.UTF8.GetBytes($"{x.Key}={ConvertJsonElementToObject(x.Value)}"))).Aggregate((prev, curr) => $"{prev},{curr}")}";
+        }
+
+        void CreateOrUpdateDartDefinesConfiguration()
+        {
+            XmlElement? commandLineOptionsElement = null;
+            const string commandLineOptionsKey = "COMMAND_LINE_OPTIONS";
+            if (component is null)
+            {
+                var androidGradleBuildConfigurationElement = doc.CreateElement("component");
+                projectNode.PrependChild(androidGradleBuildConfigurationElement);
+                androidGradleBuildConfigurationElement.SetAttribute("name", "AndroidGradleBuildConfiguration");
+                component = androidGradleBuildConfigurationElement;
+
+                commandLineOptionsElement = CreateCommandLineOptionsElement(component);
+            }
+
+            if (commandLineOptionsElement is null)
+            {
+                foreach (XmlElement c in component.GetElementsByTagName("option"))
+                {
+                    if (!c.HasAttribute("name") || c.GetAttribute("name") != commandLineOptionsKey) continue;
+
+                    commandLineOptionsElement = c;
+                    goto AssignDartDefine;
+                }
+
+                commandLineOptionsElement ??= CreateCommandLineOptionsElement(component);
+            }
+
+            AssignDartDefine:
+            commandLineOptionsElement.SetAttribute("value", ComputeCommandLineOptions());
+
+            XmlElement CreateCommandLineOptionsElement(XmlElement androidGradleBuildConfigurationElement)
+            {
+                commandLineOptionsElement = doc.CreateElement("option");
+                commandLineOptionsElement.SetAttribute("name", commandLineOptionsKey);
+                androidGradleBuildConfigurationElement.AppendChild(commandLineOptionsElement);
+                return commandLineOptionsElement;
+            }
         }
     }
 
