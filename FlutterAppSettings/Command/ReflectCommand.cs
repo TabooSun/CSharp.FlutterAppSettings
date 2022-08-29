@@ -69,6 +69,15 @@ public class ReflectCommand : BaseCommand
     {
         Console.WriteLine("Reflecting Native Android Project...");
         var jetBrainsWorkspaceFilePath = Path.Combine(flutterProjectRoot, "android", ".idea", "workspace.xml");
+        if (!File.Exists(jetBrainsWorkspaceFilePath))
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Could not find workspace.xml file in: {jetBrainsWorkspaceFilePath}. Please open the android project with Android Studio/Intellij Idea by running the following command (make sure you are in the project root):");
+            sb.AppendLine("\t- Android Studio: studio android");
+            sb.AppendLine("\t- Intellij Idea: idea android");
+            Console.WriteLine(sb.ToString());
+            return;
+        }
         ReflectNativeAndroidWorkspaceConfiguration(jetBrainsWorkspaceFilePath, flutterAppSettings);
     }
 
