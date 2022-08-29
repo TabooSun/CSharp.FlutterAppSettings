@@ -2,13 +2,13 @@
 
 ## Installation
 
-### Windows or Linux
+### Windows
 
 ```powershell
 .\pack_and_install.ps1
 ```
 
-### macOS
+### macOS or Linux
 
 ```shell
 ./pack_and_install.sh
