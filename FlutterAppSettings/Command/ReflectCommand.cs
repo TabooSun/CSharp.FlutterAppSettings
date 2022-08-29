@@ -25,8 +25,19 @@ public class ReflectCommand : BaseCommand
         Console.WriteLine("Done reflecting settings.");
     }
 
+    /// <summary>
+    /// Reflect the configuration to Flutter iOS project.
+    ///
+    /// Do nothing if this script is running on non-macOS platforms.
+    /// </summary>
+    /// <param name="additionalArgs">Additional arguments to be added.</param>
+    /// <param name="flutterAppSettings">The <see cref="FlutterAppSettings"/>.</param>
     private async Task ReflectNativeIosProjectAsync(string additionalArgs, Models.FlutterAppSettings flutterAppSettings)
     {
+#if !TARGET_OSX
+        Console.WriteLine($"Script is not running on macOS. Skipping {nameof(ReflectNativeIosProjectAsync)}...");
+        return;
+#endif
         Console.WriteLine("Reflecting Native iOS Project...");
         using var process = Process.Start(
             new ProcessStartInfo(
