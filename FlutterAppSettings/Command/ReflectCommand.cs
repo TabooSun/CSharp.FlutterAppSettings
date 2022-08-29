@@ -34,10 +34,12 @@ public class ReflectCommand : BaseCommand
     /// <param name="flutterAppSettings">The <see cref="FlutterAppSettings"/>.</param>
     private async Task ReflectNativeIosProjectAsync(string additionalArgs, Models.FlutterAppSettings flutterAppSettings)
     {
-#if !TARGET_OSX
-        Console.WriteLine($"Script is not running on macOS. Skipping {nameof(ReflectNativeIosProjectAsync)}...");
-        return;
-#endif
+        if (!OperatingSystem.IsMacOS())
+        {
+            Console.WriteLine($"Script is not running on macOS. Skipping {nameof(ReflectNativeIosProjectAsync)}...");
+            return;
+        }
+
         Console.WriteLine("Reflecting Native iOS Project...");
         using var process = Process.Start(
             new ProcessStartInfo(
@@ -83,12 +85,14 @@ public class ReflectCommand : BaseCommand
         if (!File.Exists(jetBrainsWorkspaceFilePath))
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Could not find workspace.xml file in: {jetBrainsWorkspaceFilePath}. Please open the android project with Android Studio/Intellij Idea by running the following command (make sure you are in the project root):");
+            sb.AppendLine(
+                $"Could not find workspace.xml file in: {jetBrainsWorkspaceFilePath}. Please open the android project with Android Studio/Intellij Idea by running the following command (make sure you are in the project root):");
             sb.AppendLine("\t- Android Studio: studio android");
             sb.AppendLine("\t- Intellij Idea: idea android");
             Console.WriteLine(sb.ToString());
             return;
         }
+
         ReflectNativeAndroidWorkspaceConfiguration(jetBrainsWorkspaceFilePath, flutterAppSettings);
     }
 
